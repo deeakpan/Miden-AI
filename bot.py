@@ -377,6 +377,29 @@ def assembly_command(message):
 def stdlib_command(message):
     handle_doc_command(message, 'stdlib')
 
+# Add regex pattern handlers for subcategory commands
+@bot.message_handler(regexp=r'^/client\s+(\w+)\s+(.+)$')
+def client_subcategory_command(message):
+    # Extract category and question from the message
+    match = re.match(r'^/client\s+(\w+)\s+(.+)$', message.text)
+    if match:
+        category, question = match.groups()
+        # Create a new message with the extracted parts
+        new_message = message
+        new_message.text = f"/client {category} {question}"
+        handle_client_command(new_message, category)
+
+@bot.message_handler(regexp=r'^/tutorials\s+(\w+)\s+(.+)$')
+def tutorials_subcategory_command(message):
+    # Extract category and question from the message
+    match = re.match(r'^/tutorials\s+(\w+)\s+(.+)$', message.text)
+    if match:
+        category, question = match.groups()
+        # Create a new message with the extracted parts
+        new_message = message
+        new_message.text = f"/tutorials {category} {question}"
+        handle_tutorial_command(new_message, category)
+
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     """Handle all other messages."""
@@ -390,12 +413,21 @@ def handle_message(message):
         if 'subcategory' in state:
             # Handle subcategory (client or tutorials)
             if command == 'client':
-                handle_client_command(message, state['subcategory'])
+                # Create a fake message with the command and subcategory
+                fake_message = message
+                fake_message.text = f"/client {state['subcategory']} {message.text}"
+                handle_client_command(fake_message, state['subcategory'])
             elif command == 'tutorials':
-                handle_tutorial_command(message, state['subcategory'])
+                # Create a fake message with the command and subcategory
+                fake_message = message
+                fake_message.text = f"/tutorials {state['subcategory']} {message.text}"
+                handle_tutorial_command(fake_message, state['subcategory'])
         else:
             # Handle regular command
-            handle_doc_command(message, command)
+            # Create a fake message with the command
+            fake_message = message
+            fake_message.text = f"/{command} {message.text}"
+            handle_doc_command(fake_message, command)
         
         # Clear the state after processing
         del user_states[user_id]
@@ -447,7 +479,7 @@ def get_tutorial_categories():
             categories.append(f"📚 {desc}")
     return '\n\n'.join(categories)
 
-def handle_tutorial_command(message, category):
+def handle_tutorial_command(message, category=None):
     """Handle /tutorials command with subcategories."""
     text = message.text.replace('/tutorials', '').strip()
     
@@ -483,7 +515,7 @@ def handle_tutorial_command(message, category):
             message,
             "Please provide both the category and your question. For example:\n"
             "/tutorials rust_client how to create accounts",
-            reply_markup=create_command_markup()
+            reply_markup=create_command_markup() if is_private_chat(message.chat.id) else None
         )
         return
     
@@ -496,7 +528,7 @@ def handle_tutorial_command(message, category):
             message,
             f"Unknown tutorial category: {category}\n\n"
             f"Available categories:\n{get_tutorial_categories()}",
-            reply_markup=create_command_markup()
+            reply_markup=create_command_markup() if is_private_chat(message.chat.id) else None
         )
         return
     
@@ -555,7 +587,7 @@ def get_client_categories():
             categories.append(f"📚 {desc}")
     return '\n\n'.join(categories)
 
-def handle_client_command(message, category):
+def handle_client_command(message, category=None):
     """Handle /client command with subcategories."""
     text = message.text.replace('/client', '').strip()
     
@@ -603,7 +635,7 @@ def handle_client_command(message, category):
             message,
             "Please provide both the category and your question. For example:\n"
             "/client installation how to install",
-            reply_markup=create_command_markup()
+            reply_markup=create_command_markup() if is_private_chat(message.chat.id) else None
         )
         return
     
@@ -624,7 +656,7 @@ def handle_client_command(message, category):
             "📚 CLI Reference\n"
             "📚 Examples\n"
             "📚 API Documentation",
-            reply_markup=create_command_markup()
+            reply_markup=create_command_markup() if is_private_chat(message.chat.id) else None
         )
         return
     
