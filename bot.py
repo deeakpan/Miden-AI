@@ -10,7 +10,7 @@ from urllib.parse import urljoin, urlparse
 import re
 
 # Load environment variables from local.env
-load_dotenv('local.env')
+load_dotenv('.env.local')
 
 # Configure logging
 logging.basicConfig(
