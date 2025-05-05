@@ -38,6 +38,11 @@ if not telegram_token:
 # Initialize bot
 bot = telebot.TeleBot(telegram_token)
 
+# Add a simple route for Render health check
+@app.route('/')
+def home():
+    return "Bot is running!"
+
 # Store user states
 user_states = {}
 
@@ -246,68 +251,93 @@ def get_ai_response(content: str, question: str, tutorial_info: dict = None) -> 
 
 def create_command_markup():
     """Create the command buttons markup."""
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    buttons = [
-        types.InlineKeyboardButton("Protocol", callback_data="cmd_protocol"),
-        types.InlineKeyboardButton("VM", callback_data="cmd_vm"),
-        types.InlineKeyboardButton("Compiler", callback_data="cmd_compiler"),
-        types.InlineKeyboardButton("Node", callback_data="cmd_node"),
-        types.InlineKeyboardButton("Client", callback_data="cmd_client"),
-        types.InlineKeyboardButton("Tutorials", callback_data="cmd_tutorials"),
-        types.InlineKeyboardButton("Assembly", callback_data="cmd_assembly"),
-        types.InlineKeyboardButton("STD Library", callback_data="cmd_stdlib")
+    keyboard = [
+        [
+            types.InlineKeyboardButton("Protocol", callback_data="cmd_protocol"),
+            types.InlineKeyboardButton("VM", callback_data="cmd_vm")
+        ],
+        [
+            types.InlineKeyboardButton("Compiler", callback_data="cmd_compiler"),
+            types.InlineKeyboardButton("Node", callback_data="cmd_node")
+        ],
+        [
+            types.InlineKeyboardButton("Client", callback_data="cmd_client"),
+            types.InlineKeyboardButton("Tutorials", callback_data="cmd_tutorials")
+        ],
+        [
+            types.InlineKeyboardButton("Assembly", callback_data="cmd_assembly"),
+            types.InlineKeyboardButton("STD Library", callback_data="cmd_stdlib")
+        ]
     ]
-    markup.add(*buttons)
-    return markup
+    return types.InlineKeyboardMarkup(keyboard)
 
 def is_private_chat(chat_id):
     """Check if the chat is a private chat."""
     return chat_id > 0
 
-def handle_doc_command(message, topic):
+@bot.message_handler(commands=['start'])
+def start(message):
+    """Handle /start command."""
+    welcome_message = (
+        "👋 Welcome to the Miden AI Agent!\n\n"
+        "Select a command to get started:"
+    )
+    bot.send_message(message.chat.id, welcome_message, reply_markup=create_command_markup())
+
+@bot.message_handler(commands=['command'])
+def show_commands(message):
+    """Handle /command command."""
+    commands_message = (
+        "Available commands:\n"
+        "Select a command to get started:"
+    )
+    bot.send_message(message.chat.id, commands_message, reply_markup=create_command_markup())
+
+@bot.message_handler(commands=['protocol', 'vm', 'compiler', 'node', 'assembly', 'stdlib'])
+def handle_doc_command(message):
     """Handle documentation commands."""
     try:
         text = message.text
-        # Remove the command from the text
-        question = text.replace(f"/{topic}", "").strip()
+        command = text.split()[0].replace('/', '')
+        question = text.replace(f"/{command}", "").strip()
         
         if not question:
             if is_private_chat(message.chat.id):
                 # In private chat, show buttons
-                bot.reply_to(
-                    message,
-                    f'What would you like to know about {topic}? I can help you explore ideas, '
+                bot.send_message(
+                    message.chat.id,
+                    f'What would you like to know about {command}? I can help you explore ideas, '
                     f'understand concepts, or dive into specific implementation details.',
                     reply_markup=create_command_markup()
                 )
             else:
                 # In group chat, show simple text response
-                bot.reply_to(
-                    message,
-                    f'Please ask your question about {topic}. For example:\n'
-                    f'/{topic} how does it work?\n'
-                    f'/{topic} what are the main features?'
+                bot.send_message(
+                    message.chat.id,
+                    f'Please ask your question about {command}. For example:\n'
+                    f'/{command} how does it work?\n'
+                    f'/{command} what are the main features?'
                 )
             return
         
         # Send processing message
-        processing_message = bot.reply_to(message, 'Let me think about that...')
+        processing_message = bot.send_message(message.chat.id, 'Let me think about that...')
         
         # Get the documentation URL for the topic
-        doc_url = DOC_URLS.get(topic)
+        doc_url = DOC_URLS.get(command)
         if not doc_url:
             if is_private_chat(message.chat.id):
                 bot.edit_message_text(
-                    chat_id=processing_message.chat.id,
+                    chat_id=message.chat.id,
                     message_id=processing_message.message_id,
-                    text=f"I don't have documentation for {topic} yet, but I'd be happy to discuss what you're trying to build!",
+                    text=f"I don't have documentation for {command} yet, but I'd be happy to discuss what you're trying to build!",
                     reply_markup=create_command_markup()
                 )
             else:
                 bot.edit_message_text(
-                    chat_id=processing_message.chat.id,
+                    chat_id=message.chat.id,
                     message_id=processing_message.message_id,
-                    text=f"I don't have documentation for {topic} yet, but I'd be happy to discuss what you're trying to build!"
+                    text=f"I don't have documentation for {command} yet, but I'd be happy to discuss what you're trying to build!"
                 )
             return
         
@@ -321,7 +351,7 @@ def handle_doc_command(message, topic):
         if is_private_chat(message.chat.id):
             # In private chat, include buttons
             bot.edit_message_text(
-                chat_id=processing_message.chat.id,
+                chat_id=message.chat.id,
                 message_id=processing_message.message_id,
                 text=response,
                 reply_markup=create_command_markup()
@@ -329,80 +359,247 @@ def handle_doc_command(message, topic):
         else:
             # In group chat, just show response
             bot.edit_message_text(
-                chat_id=processing_message.chat.id,
+                chat_id=message.chat.id,
                 message_id=processing_message.message_id,
                 text=response
             )
         
     except Exception as e:
-        logger.error(f"Error processing {topic} command: {e}")
+        logger.error(f"Error processing {command} command: {e}")
         if is_private_chat(message.chat.id):
-            bot.reply_to(
-                message,
+            bot.send_message(
+                message.chat.id,
                 'Sorry, I encountered an error while processing your request. Please try again later.',
                 reply_markup=create_command_markup()
             )
         else:
-            bot.reply_to(
-                message,
+            bot.send_message(
+                message.chat.id,
                 'Sorry, I encountered an error while processing your request. Please try again later.'
             )
 
-# Register command handlers
-@bot.message_handler(commands=['protocol'])
-def protocol_command(message):
-    handle_doc_command(message, 'protocol')
-
-@bot.message_handler(commands=['vm'])
-def vm_command(message):
-    handle_doc_command(message, 'vm')
-
-@bot.message_handler(commands=['compiler'])
-def compiler_command(message):
-    handle_doc_command(message, 'compiler')
-
-@bot.message_handler(commands=['node'])
-def node_command(message):
-    handle_doc_command(message, 'node')
-
 @bot.message_handler(commands=['client'])
-def client_command(message):
-    handle_client_command(message)
+def handle_client_command(message):
+    """Handle client command."""
+    try:
+        text = message.text
+        parts = text.split(maxsplit=2)
+        if len(parts) < 2:
+            if is_private_chat(message.chat.id):
+                # Show client categories
+                keyboard = [
+                    [types.InlineKeyboardButton("Installation", callback_data="client_installation")],
+                    [types.InlineKeyboardButton("Getting Started", callback_data="client_getting_started")],
+                    [types.InlineKeyboardButton("Features", callback_data="client_features")],
+                    [types.InlineKeyboardButton("Design", callback_data="client_design")],
+                    [types.InlineKeyboardButton("Library", callback_data="client_library")],
+                    [types.InlineKeyboardButton("CLI Reference", callback_data="client_cli")],
+                    [types.InlineKeyboardButton("Examples", callback_data="client_examples")],
+                    [types.InlineKeyboardButton("API Documentation", callback_data="client_api")],
+                    [types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")]
+                ]
+                bot.send_message(
+                    message.chat.id,
+                    "Select a client category:",
+                    reply_markup=types.InlineKeyboardMarkup(keyboard)
+                )
+            else:
+                bot.send_message(
+                    message.chat.id,
+                    "Please specify a client category. For example:\n"
+                    "/client installation\n"
+                    "/client getting_started\n"
+                    "/client features"
+                )
+            return
+        
+        subcategory = parts[1]
+        question = parts[2] if len(parts) > 2 else ""
+        
+        if not question:
+            if is_private_chat(message.chat.id):
+                bot.send_message(
+                    message.chat.id,
+                    f"What would you like to know about {subcategory}?",
+                    reply_markup=types.InlineKeyboardMarkup([[types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")]])
+                )
+            else:
+                bot.send_message(
+                    message.chat.id,
+                    f"Please ask your question about {subcategory}. For example:\n"
+                    f"/client {subcategory} how does it work?\n"
+                    f"/client {subcategory} what are the main features?"
+                )
+            return
+        
+        # Send processing message
+        processing_message = bot.send_message(message.chat.id, 'Let me think about that...')
+        
+        # Get the documentation URL for the subcategory
+        client_info = DOC_URLS.get('client', {})
+        subcategory_info = client_info.get('subcategories', {}).get(subcategory)
+        
+        if not subcategory_info:
+            if is_private_chat(message.chat.id):
+                bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=processing_message.message_id,
+                    text=f"I don't have documentation for {subcategory} yet, but I'd be happy to discuss what you're trying to build!",
+                    reply_markup=create_command_markup()
+                )
+            else:
+                bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=processing_message.message_id,
+                    text=f"I don't have documentation for {subcategory} yet, but I'd be happy to discuss what you're trying to build!"
+                )
+            return
+        
+        # Scrape webpage
+        content = scrape_webpage(subcategory_info['url'])
+        
+        # Get AI response
+        response = get_ai_response(content, question, subcategory_info)
+        
+        # Update processing message with response
+        if is_private_chat(message.chat.id):
+            # In private chat, include buttons
+            bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=processing_message.message_id,
+                text=response,
+                reply_markup=create_command_markup()
+            )
+        else:
+            # In group chat, just show response
+            bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=processing_message.message_id,
+                text=response
+            )
+        
+    except Exception as e:
+        logger.error(f"Error processing client command: {e}")
+        if is_private_chat(message.chat.id):
+            bot.send_message(
+                message.chat.id,
+                'Sorry, I encountered an error while processing your request. Please try again later.',
+                reply_markup=create_command_markup()
+            )
+        else:
+            bot.send_message(
+                message.chat.id,
+                'Sorry, I encountered an error while processing your request. Please try again later.'
+            )
 
 @bot.message_handler(commands=['tutorials'])
-def tutorials_command(message):
-    handle_tutorial_command(message)
-
-@bot.message_handler(commands=['assembly'])
-def assembly_command(message):
-    handle_doc_command(message, 'assembly')
-
-@bot.message_handler(commands=['stdlib'])
-def stdlib_command(message):
-    handle_doc_command(message, 'stdlib')
-
-# Add regex pattern handlers for subcategory commands
-@bot.message_handler(regexp=r'^/client\s+(\w+)\s+(.+)$')
-def client_subcategory_command(message):
-    # Extract category and question from the message
-    match = re.match(r'^/client\s+(\w+)\s+(.+)$', message.text)
-    if match:
-        category, question = match.groups()
-        # Create a new message with the extracted parts
-        new_message = message
-        new_message.text = f"/client {category} {question}"
-        handle_client_command(new_message, category)
-
-@bot.message_handler(regexp=r'^/tutorials\s+(\w+)\s+(.+)$')
-def tutorials_subcategory_command(message):
-    # Extract category and question from the message
-    match = re.match(r'^/tutorials\s+(\w+)\s+(.+)$', message.text)
-    if match:
-        category, question = match.groups()
-        # Create a new message with the extracted parts
-        new_message = message
-        new_message.text = f"/tutorials {category} {question}"
-        handle_tutorial_command(new_message, category)
+def handle_tutorial_command(message):
+    """Handle tutorials command."""
+    try:
+        text = message.text
+        parts = text.split(maxsplit=2)
+        if len(parts) < 2:
+            if is_private_chat(message.chat.id):
+                # Show tutorial categories
+                keyboard = [
+                    [types.InlineKeyboardButton("Node Setup", callback_data="tutorials_node_setup")],
+                    [types.InlineKeyboardButton("Rust Client", callback_data="tutorials_rust_client")],
+                    [types.InlineKeyboardButton("Web Client", callback_data="tutorials_web_client")],
+                    [types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")]
+                ]
+                bot.send_message(
+                    message.chat.id,
+                    "Select a tutorial category:",
+                    reply_markup=types.InlineKeyboardMarkup(keyboard)
+                )
+            else:
+                bot.send_message(
+                    message.chat.id,
+                    "Please specify a tutorial category. For example:\n"
+                    "/tutorials node_setup\n"
+                    "/tutorials rust_client\n"
+                    "/tutorials web_client"
+                )
+            return
+        
+        subcategory = parts[1]
+        question = parts[2] if len(parts) > 2 else ""
+        
+        if not question:
+            if is_private_chat(message.chat.id):
+                bot.send_message(
+                    message.chat.id,
+                    f"What would you like to know about {subcategory}?",
+                    reply_markup=types.InlineKeyboardMarkup([[types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")]])
+                )
+            else:
+                bot.send_message(
+                    message.chat.id,
+                    f"Please ask your question about {subcategory}. For example:\n"
+                    f"/tutorials {subcategory} how does it work?\n"
+                    f"/tutorials {subcategory} what are the main features?"
+                )
+            return
+        
+        # Send processing message
+        processing_message = bot.send_message(message.chat.id, 'Let me think about that...')
+        
+        # Get the documentation URL for the subcategory
+        tutorials_info = DOC_URLS.get('tutorials', {})
+        subcategory_info = tutorials_info.get('subcategories', {}).get(subcategory)
+        
+        if not subcategory_info:
+            if is_private_chat(message.chat.id):
+                bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=processing_message.message_id,
+                    text=f"I don't have documentation for {subcategory} yet, but I'd be happy to discuss what you're trying to build!",
+                    reply_markup=create_command_markup()
+                )
+            else:
+                bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=processing_message.message_id,
+                    text=f"I don't have documentation for {subcategory} yet, but I'd be happy to discuss what you're trying to build!"
+                )
+            return
+        
+        # Scrape webpage
+        content = scrape_webpage(subcategory_info['url'])
+        
+        # Get AI response
+        response = get_ai_response(content, question, subcategory_info)
+        
+        # Update processing message with response
+        if is_private_chat(message.chat.id):
+            # In private chat, include buttons
+            bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=processing_message.message_id,
+                text=response,
+                reply_markup=create_command_markup()
+            )
+        else:
+            # In group chat, just show response
+            bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=processing_message.message_id,
+                text=response
+            )
+        
+    except Exception as e:
+        logger.error(f"Error processing tutorials command: {e}")
+        if is_private_chat(message.chat.id):
+            bot.send_message(
+                message.chat.id,
+                'Sorry, I encountered an error while processing your request. Please try again later.',
+                reply_markup=create_command_markup()
+            )
+        else:
+            bot.send_message(
+                message.chat.id,
+                'Sorry, I encountered an error while processing your request. Please try again later.'
+            )
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
@@ -418,20 +615,17 @@ def handle_message(message):
             # Handle subcategory (client or tutorials)
             if command == 'client':
                 # Create a fake message with the command and subcategory
-                fake_message = message
-                fake_message.text = f"/client {state['subcategory']} {message.text}"
-                handle_client_command(fake_message, state['subcategory'])
+                message.text = f"/client {state['subcategory']} {message.text}"
+                handle_client_command(message)
             elif command == 'tutorials':
                 # Create a fake message with the command and subcategory
-                fake_message = message
-                fake_message.text = f"/tutorials {state['subcategory']} {message.text}"
-                handle_tutorial_command(fake_message, state['subcategory'])
+                message.text = f"/tutorials {state['subcategory']} {message.text}"
+                handle_tutorial_command(message)
         else:
             # Handle regular command
             # Create a fake message with the command
-            fake_message = message
-            fake_message.text = f"/{command} {message.text}"
-            handle_doc_command(fake_message, command)
+            message.text = f"/{command} {message.text}"
+            handle_doc_command(message)
         
         # Clear the state after processing
         del user_states[user_id]
@@ -439,27 +633,15 @@ def handle_message(message):
         # No command selected, show available commands
         if is_private_chat(message.chat.id):
             # In private chat, show buttons
-            markup = types.InlineKeyboardMarkup(row_width=2)
-            buttons = [
-                types.InlineKeyboardButton("Protocol", callback_data="cmd_protocol"),
-                types.InlineKeyboardButton("VM", callback_data="cmd_vm"),
-                types.InlineKeyboardButton("Compiler", callback_data="cmd_compiler"),
-                types.InlineKeyboardButton("Node", callback_data="cmd_node"),
-                types.InlineKeyboardButton("Client", callback_data="cmd_client"),
-                types.InlineKeyboardButton("Tutorials", callback_data="cmd_tutorials"),
-                types.InlineKeyboardButton("Assembly", callback_data="cmd_assembly"),
-                types.InlineKeyboardButton("STD Library", callback_data="cmd_stdlib")
-            ]
-            markup.add(*buttons)
-            bot.reply_to(
-                message,
+            bot.send_message(
+                message.chat.id,
                 "Please select a command to get started:",
-                reply_markup=markup
+                reply_markup=create_command_markup()
             )
         else:
             # In group chat, show simple text response
-            bot.reply_to(
-                message,
+            bot.send_message(
+                message.chat.id,
                 "Please use one of the available commands:\n"
                 "/protocol - Ask about Miden Protocol\n"
                 "/vm - Ask about Miden Virtual Machine\n"
@@ -471,317 +653,62 @@ def handle_message(message):
                 "/stdlib - Ask about Standard Library"
             )
 
-def get_tutorial_categories():
-    """Get formatted tutorial categories."""
-    categories = []
-    for key, value in DOC_URLS['tutorials']['subcategories'].items():
-        desc = value['description']
-        if 'subtopics' in value:
-            subtopics = '\n  • ' + '\n  • '.join(value['subtopics'])
-            categories.append(f"📚 {desc}{subtopics}")
-        else:
-            categories.append(f"📚 {desc}")
-    return '\n\n'.join(categories)
-
-def handle_tutorial_command(message, category=None):
-    """Handle /tutorials command with subcategories."""
-    text = message.text.replace('/tutorials', '').strip()
-    
-    if not text:
-        if is_private_chat(message.chat.id):
-            # Show tutorial categories with buttons
-            markup = types.InlineKeyboardMarkup(row_width=1)
-            buttons = [
-                types.InlineKeyboardButton("Node Setup", callback_data="tutorials_node_setup"),
-                types.InlineKeyboardButton("Rust Client", callback_data="tutorials_rust_client"),
-                types.InlineKeyboardButton("Web Client", callback_data="tutorials_web_client"),
-                types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")
-            ]
-            markup.add(*buttons)
-            bot.reply_to(message, "Select a tutorial category:", reply_markup=markup)
-        else:
-            # Show simple text response
-            response = (
-                "Available tutorial categories:\n\n"
-                f"{get_tutorial_categories()}\n\n"
-                "Example usage:\n"
-                "/tutorials rust_client how to create accounts\n"
-                "/tutorials web_client mint notes\n"
-                "/tutorials node_setup setup guide"
-            )
-            bot.reply_to(message, response)
-        return
-    
-    # Parse the command to get category and question
-    parts = text.split(' ', 1)
-    if len(parts) < 2:
-        bot.reply_to(
-            message,
-            "Please provide both the category and your question. For example:\n"
-            "/tutorials rust_client how to create accounts",
-            reply_markup=create_command_markup() if is_private_chat(message.chat.id) else None
-        )
-        return
-    
-    category, question = parts
-    category = category.lower()
-    
-    # Get the appropriate URL based on category
-    if category not in DOC_URLS['tutorials']['subcategories']:
-        bot.reply_to(
-            message,
-            f"Unknown tutorial category: {category}\n\n"
-            f"Available categories:\n{get_tutorial_categories()}",
-            reply_markup=create_command_markup() if is_private_chat(message.chat.id) else None
-        )
-        return
-    
-    tutorial_info = DOC_URLS['tutorials']['subcategories'][category]
-    url = tutorial_info['url']
-    
-    # Send processing message
-    processing_message = bot.reply_to(message, 'Processing your request...')
-    
-    try:
-        # Scrape webpage
-        content = scrape_webpage(url)
-        
-        # Get AI response with tutorial context
-        response = get_ai_response(content, question, tutorial_info)
-        
-        # Update processing message with response
-        if is_private_chat(message.chat.id):
-            bot.edit_message_text(
-                chat_id=processing_message.chat.id,
-                message_id=processing_message.message_id,
-                text=response,
-                reply_markup=create_command_markup()
-            )
-        else:
-            bot.edit_message_text(
-                chat_id=processing_message.chat.id,
-                message_id=processing_message.message_id,
-                text=response
-            )
-    except Exception as e:
-        logger.error(f"Error processing tutorial command: {e}")
-        if is_private_chat(message.chat.id):
-            bot.edit_message_text(
-                chat_id=processing_message.chat.id,
-                message_id=processing_message.message_id,
-                text='Sorry, I encountered an error while processing your request. Please try again later.',
-                reply_markup=create_command_markup()
-            )
-        else:
-            bot.edit_message_text(
-                chat_id=processing_message.chat.id,
-                message_id=processing_message.message_id,
-                text='Sorry, I encountered an error while processing your request. Please try again later.'
-            )
-
-def get_client_categories():
-    """Get formatted client categories."""
-    categories = []
-    for key, value in DOC_URLS['client']['subcategories'].items():
-        desc = value['description']
-        if 'subtopics' in value:
-            subtopics = '\n  • ' + '\n  • '.join(value['subtopics'])
-            categories.append(f"📚 {desc}{subtopics}")
-        else:
-            categories.append(f"📚 {desc}")
-    return '\n\n'.join(categories)
-
-def handle_client_command(message, category=None):
-    """Handle /client command with subcategories."""
-    text = message.text.replace('/client', '').strip()
-    
-    if not text:
-        if is_private_chat(message.chat.id):
-            # Show client categories with buttons
-            markup = types.InlineKeyboardMarkup(row_width=1)
-            buttons = [
-                types.InlineKeyboardButton("Installation", callback_data="client_installation"),
-                types.InlineKeyboardButton("Getting Started", callback_data="client_getting_started"),
-                types.InlineKeyboardButton("Features", callback_data="client_features"),
-                types.InlineKeyboardButton("Design", callback_data="client_design"),
-                types.InlineKeyboardButton("Library", callback_data="client_library"),
-                types.InlineKeyboardButton("CLI Reference", callback_data="client_cli"),
-                types.InlineKeyboardButton("Examples", callback_data="client_examples"),
-                types.InlineKeyboardButton("API Documentation", callback_data="client_api"),
-                types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")
-            ]
-            markup.add(*buttons)
-            bot.reply_to(message, "Select a client category:", reply_markup=markup)
-        else:
-            # Show simple text response
-            response = (
-                "Available client categories:\n"
-                "📚 Installation\n"
-                "📚 Getting Started\n"
-                "📚 Features\n"
-                "📚 Design\n"
-                "📚 Library\n"
-                "📚 CLI Reference\n"
-                "📚 Examples\n"
-                "📚 API Documentation\n\n"
-                "Example usage:\n"
-                "/client installation how to install\n"
-                "/client getting_started how to create an account\n"
-                "/client cli how to configure"
-            )
-            bot.reply_to(message, response)
-        return
-    
-    # Parse the command to get category and question
-    parts = text.split(' ', 1)
-    if len(parts) < 2:
-        bot.reply_to(
-            message,
-            "Please provide both the category and your question. For example:\n"
-            "/client installation how to install",
-            reply_markup=create_command_markup() if is_private_chat(message.chat.id) else None
-        )
-        return
-    
-    category, question = parts
-    category = category.lower()
-    
-    # Get the appropriate URL based on category
-    if category not in DOC_URLS['client']['subcategories']:
-        bot.reply_to(
-            message,
-            f"Unknown client category: {category}\n\n"
-            "Available categories:\n"
-            "📚 Installation\n"
-            "📚 Getting Started\n"
-            "📚 Features\n"
-            "📚 Design\n"
-            "📚 Library\n"
-            "📚 CLI Reference\n"
-            "📚 Examples\n"
-            "📚 API Documentation",
-            reply_markup=create_command_markup() if is_private_chat(message.chat.id) else None
-        )
-        return
-    
-    client_info = DOC_URLS['client']['subcategories'][category]
-    url = client_info['url']
-    
-    # Send processing message
-    processing_message = bot.reply_to(message, 'Let me think about that...')
-    
-    try:
-        # Scrape webpage
-        content = scrape_webpage(url)
-        
-        # Get AI response with client context
-        response = get_ai_response(content, question, client_info)
-        
-        # Update processing message with response
-        if is_private_chat(message.chat.id):
-            bot.edit_message_text(
-                chat_id=processing_message.chat.id,
-                message_id=processing_message.message_id,
-                text=response,
-                reply_markup=create_command_markup()
-            )
-        else:
-            bot.edit_message_text(
-                chat_id=processing_message.chat.id,
-                message_id=processing_message.message_id,
-                text=response
-            )
-    except Exception as e:
-        logger.error(f"Error processing client command: {e}")
-        if is_private_chat(message.chat.id):
-            bot.edit_message_text(
-                chat_id=processing_message.chat.id,
-                message_id=processing_message.message_id,
-                text='Sorry, I encountered an error while processing your request. Please try again later.',
-                reply_markup=create_command_markup()
-            )
-        else:
-            bot.edit_message_text(
-                chat_id=processing_message.chat.id,
-                message_id=processing_message.message_id,
-                text='Sorry, I encountered an error while processing your request. Please try again later.'
-            )
-
-@bot.message_handler(commands=['start'])
-def start(message):
-    """Handle /start command."""
-    welcome_message = (
-        "👋 Welcome to the Miden AI Agent!\n\n"
-        "Select a command to get started:"
-    )
-    bot.reply_to(message, welcome_message, reply_markup=create_command_markup())
-
-@bot.message_handler(commands=['command'])
-def show_commands(message):
-    """Handle /command command."""
-    commands_message = (
-        "Available commands:\n"
-        "Select a command to get started:"
-    )
-    bot.reply_to(message, commands_message, reply_markup=create_command_markup())
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith('cmd_'))
 def handle_command_callback(call):
     """Handle command button callbacks."""
+    bot.answer_callback_query(call.id)
+    
     command = call.data.replace('cmd_', '')
     user_id = call.from_user.id
     
     if command == 'client':
         # Show client categories
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        buttons = [
-            types.InlineKeyboardButton("Installation", callback_data="client_installation"),
-            types.InlineKeyboardButton("Getting Started", callback_data="client_getting_started"),
-            types.InlineKeyboardButton("Features", callback_data="client_features"),
-            types.InlineKeyboardButton("Design", callback_data="client_design"),
-            types.InlineKeyboardButton("Library", callback_data="client_library"),
-            types.InlineKeyboardButton("CLI Reference", callback_data="client_cli"),
-            types.InlineKeyboardButton("Examples", callback_data="client_examples"),
-            types.InlineKeyboardButton("API Documentation", callback_data="client_api"),
-            types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")
+        keyboard = [
+            [types.InlineKeyboardButton("Installation", callback_data="client_installation")],
+            [types.InlineKeyboardButton("Getting Started", callback_data="client_getting_started")],
+            [types.InlineKeyboardButton("Features", callback_data="client_features")],
+            [types.InlineKeyboardButton("Design", callback_data="client_design")],
+            [types.InlineKeyboardButton("Library", callback_data="client_library")],
+            [types.InlineKeyboardButton("CLI Reference", callback_data="client_cli")],
+            [types.InlineKeyboardButton("Examples", callback_data="client_examples")],
+            [types.InlineKeyboardButton("API Documentation", callback_data="client_api")],
+            [types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")]
         ]
-        markup.add(*buttons)
         bot.edit_message_text(
-            "Select a client category:",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            reply_markup=markup
+            text="Select a client category:",
+            reply_markup=types.InlineKeyboardMarkup(keyboard)
         )
     elif command == 'tutorials':
         # Show tutorial categories
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        buttons = [
-            types.InlineKeyboardButton("Node Setup", callback_data="tutorials_node_setup"),
-            types.InlineKeyboardButton("Rust Client", callback_data="tutorials_rust_client"),
-            types.InlineKeyboardButton("Web Client", callback_data="tutorials_web_client"),
-            types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")
+        keyboard = [
+            [types.InlineKeyboardButton("Node Setup", callback_data="tutorials_node_setup")],
+            [types.InlineKeyboardButton("Rust Client", callback_data="tutorials_rust_client")],
+            [types.InlineKeyboardButton("Web Client", callback_data="tutorials_web_client")],
+            [types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")]
         ]
-        markup.add(*buttons)
         bot.edit_message_text(
-            "Select a tutorial category:",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            reply_markup=markup
+            text="Select a tutorial category:",
+            reply_markup=types.InlineKeyboardMarkup(keyboard)
         )
     else:
         # For other commands, set the state and ask for question
         user_states[user_id] = {'command': command}
-        bot.send_message(
-            call.message.chat.id,
-            f"What would you like to know about {command}?",
-            reply_markup=types.InlineKeyboardMarkup().add(
-                types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")
-            )
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=f"What would you like to know about {command}?",
+            reply_markup=types.InlineKeyboardMarkup([[types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")]])
         )
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(('client_', 'tutorials_')))
 def handle_category_callback(call):
     """Handle category button callbacks."""
+    bot.answer_callback_query(call.id)
+    
     category = call.data
     user_id = call.from_user.id
     
@@ -789,36 +716,36 @@ def handle_category_callback(call):
         command = 'client'
         subcategory = category.replace('client_', '')
         user_states[user_id] = {'command': command, 'subcategory': subcategory}
-        bot.send_message(
-            call.message.chat.id,
-            f"What would you like to know about {subcategory}?",
-            reply_markup=types.InlineKeyboardMarkup().add(
-                types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")
-            )
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=f"What would you like to know about {subcategory}?",
+            reply_markup=types.InlineKeyboardMarkup([[types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")]])
         )
     elif category.startswith('tutorials_'):
         command = 'tutorials'
         subcategory = category.replace('tutorials_', '')
         user_states[user_id] = {'command': command, 'subcategory': subcategory}
-        bot.send_message(
-            call.message.chat.id,
-            f"What would you like to know about {subcategory}?",
-            reply_markup=types.InlineKeyboardMarkup().add(
-                types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")
-            )
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=f"What would you like to know about {subcategory}?",
+            reply_markup=types.InlineKeyboardMarkup([[types.InlineKeyboardButton("Back to Commands", callback_data="back_to_commands")]])
         )
 
 @bot.callback_query_handler(func=lambda call: call.data == 'back_to_commands')
 def handle_back_to_commands(call):
     """Handle back to commands button."""
+    bot.answer_callback_query(call.id)
+    
     user_id = call.from_user.id
     if user_id in user_states:
         del user_states[user_id]
     
     bot.edit_message_text(
-        "Available commands:\nSelect a command to get started:",
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
+        text="Available commands:\nSelect a command to get started:",
         reply_markup=create_command_markup()
     )
 
@@ -827,29 +754,8 @@ def main():
     try:
         logger.info("Starting bot...")
         
-        # Set bot commands for suggestions
-        commands = [
-            types.BotCommand("start", "Start the Miden AI Agent"),
-            types.BotCommand("command", "Show available commands"),
-            types.BotCommand("protocol", "Ask about Miden Protocol"),
-            types.BotCommand("vm", "Ask about Miden Virtual Machine"),
-            types.BotCommand("compiler", "Ask about Miden Compiler"),
-            types.BotCommand("node", "Ask about Miden Node"),
-            types.BotCommand("client", "Ask about Miden Client"),
-            types.BotCommand("tutorials", "Browse Miden Tutorials"),
-            types.BotCommand("assembly", "Ask about Miden Assembly"),
-            types.BotCommand("stdlib", "Ask about Standard Library")
-        ]
-        bot.set_my_commands(commands)
-        
-        # Start polling in a separate thread
-        import threading
-        polling_thread = threading.Thread(target=bot.infinity_polling)
-        polling_thread.start()
-        
-        # Start Flask app
-        port = int(os.environ.get('PORT', 10000))
-        app.run(host='0.0.0.0', port=port)
+        # Start the bot in a non-blocking way
+        bot.infinity_polling()
         
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
