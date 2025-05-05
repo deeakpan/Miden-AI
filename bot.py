@@ -38,11 +38,6 @@ if not telegram_token:
 # Initialize bot
 bot = telebot.TeleBot(telegram_token)
 
-# Add a simple route for Render health check
-@app.route('/')
-def home():
-    return "Bot is running!"
-
 # Store user states
 user_states = {}
 
@@ -749,13 +744,37 @@ def handle_back_to_commands(call):
         reply_markup=create_command_markup()
     )
 
+# Add webhook route
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Handle incoming webhook updates from Telegram."""
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return 'OK', 200
+    return 'Error', 400
+
+# Add a simple route for Render health check
+@app.route('/')
+def home():
+    return "Bot is running!"
+
 def main():
     """Start the bot."""
     try:
         logger.info("Starting bot...")
         
-        # Start the bot in a non-blocking way
-        bot.infinity_polling()
+        # Get the webhook URL from environment variable or use a default
+        webhook_url = os.getenv('WEBHOOK_URL', 'https://your-render-app.onrender.com/webhook')
+        
+        # Remove any existing webhook
+        bot.remove_webhook()
+        
+        # Set the webhook
+        bot.set_webhook(url=webhook_url)
+        
+        logger.info(f"Webhook set to: {webhook_url}")
         
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
