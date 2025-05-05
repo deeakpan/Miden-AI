@@ -3,7 +3,7 @@ import logging
 from dotenv import load_dotenv
 import telebot
 from telebot import types
-import groq
+from groq import Groq
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
@@ -28,7 +28,7 @@ api_key = os.getenv('GROQ_API_KEY')
 if not api_key:
     raise ValueError("GROQ_API_KEY not found in environment variables")
 
-groq_client = groq.Groq(api_key=api_key)
+groq_client = Groq(api_key=api_key)
 
 # Get Telegram bot token
 telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -248,21 +248,21 @@ def create_command_markup():
     """Create the command buttons markup."""
     keyboard = [
         [
-            types.InlineKeyboardButton("Protocol", callback_data="cmd_protocol"),
+        types.InlineKeyboardButton("Protocol", callback_data="cmd_protocol"),
             types.InlineKeyboardButton("VM", callback_data="cmd_vm")
         ],
         [
-            types.InlineKeyboardButton("Compiler", callback_data="cmd_compiler"),
+        types.InlineKeyboardButton("Compiler", callback_data="cmd_compiler"),
             types.InlineKeyboardButton("Node", callback_data="cmd_node")
         ],
         [
-            types.InlineKeyboardButton("Client", callback_data="cmd_client"),
+        types.InlineKeyboardButton("Client", callback_data="cmd_client"),
             types.InlineKeyboardButton("Tutorials", callback_data="cmd_tutorials")
         ],
         [
-            types.InlineKeyboardButton("Assembly", callback_data="cmd_assembly"),
-            types.InlineKeyboardButton("STD Library", callback_data="cmd_stdlib")
-        ]
+        types.InlineKeyboardButton("Assembly", callback_data="cmd_assembly"),
+        types.InlineKeyboardButton("STD Library", callback_data="cmd_stdlib")
+    ]
     ]
     return types.InlineKeyboardMarkup(keyboard)
 
