@@ -8,8 +8,12 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 import re
+from flask import Flask, request
 
-# Load environment variables from local.env
+# Initialize Flask app
+app = Flask(__name__)
+
+# Load environment variables from .env.local
 load_dotenv('.env.local')
 
 # Configure logging
@@ -838,8 +842,15 @@ def main():
         ]
         bot.set_my_commands(commands)
         
-        # Start polling
-        bot.infinity_polling()
+        # Start polling in a separate thread
+        import threading
+        polling_thread = threading.Thread(target=bot.infinity_polling)
+        polling_thread.start()
+        
+        # Start Flask app
+        port = int(os.environ.get('PORT', 10000))
+        app.run(host='0.0.0.0', port=port)
+        
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
         raise
