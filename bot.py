@@ -194,30 +194,24 @@ def scrape_webpage(url: str, max_pages: int = 5) -> str:
 def get_ai_response(content: str, question: str, tutorial_info: dict = None) -> tuple:
     """Get AI response from Groq."""
     try:
-        # Build a more engaging system prompt
+        # Build a more concise system prompt
         system_prompt = (
-            "You are a Miden development expert and creative thinker. Your role is to help developers "
-            "understand and explore the possibilities of building on Miden. When answering questions:\n\n"
-            "1. Start with a brief, engaging introduction that shows you understand the developer's goals\n"
-            "2. Share practical insights and real-world examples\n"
-            "3. Explain concepts in a conversational way, as if you're brainstorming with a fellow developer\n"
-            "4. Include specific technical details and code examples when relevant\n"
-            "5. Suggest innovative approaches or unique use cases\n"
-            "6. End with actionable next steps or resources for further exploration\n\n"
-            "Important guidelines:\n"
-            "- Only reference official Miden documentation and resources\n"
-            "- Don't make up or assume the existence of communities or resources\n"
-            "- Keep responses concise and focused\n\n"
-            "Remember: You're not just listing documentation - you're helping developers think creatively "
-            "about how to build on Miden's unique capabilities."
+            "You are a Miden development expert. Help developers understand and build on Miden by:\n"
+            "1. Providing clear, concise explanations\n"
+            "2. Sharing practical examples and code snippets\n"
+            "3. Focusing on official Miden documentation\n"
+            "4. Keeping responses focused and actionable\n\n"
+            "Guidelines:\n"
+            "- Only reference official Miden resources\n"
+            "- Keep responses under 200 words\n"
+            "- Include code examples when relevant"
         )
         
         # Add tutorial context if available
         if tutorial_info:
             if 'subtopics' in tutorial_info:
-                system_prompt += f"\n\nFor this specific tutorial section ({tutorial_info['description']}), "
-                system_prompt += "focus on practical implementation details and real-world examples. "
-                system_prompt += "Available topics include:\n"
+                system_prompt += f"\n\nTutorial focus: {tutorial_info['description']}\n"
+                system_prompt += "Available topics:\n"
                 system_prompt += '\n'.join(f"- {topic}" for topic in tutorial_info['subtopics'])
         
         completion = groq_client.chat.completions.create(
@@ -232,13 +226,16 @@ def get_ai_response(content: str, question: str, tutorial_info: dict = None) -> 
                 }
             ],
             model="llama-3.3-70b-versatile",
-            temperature=0.8,  # Slightly increased for more creative responses
-            max_tokens=1024,
+            temperature=0.7,  # Slightly reduced for more focused responses
+            max_tokens=512,  # Reduced from 1024 to save tokens
         )
         return completion.choices[0].message.content
     except Exception as e:
+        if hasattr(e, 'response') and e.response.status_code == 429:
+            logger.error("Rate limit exceeded. Please try again later.")
+            return "I apologize, but I've reached my daily limit for responses. Please try again in a few hours or upgrade to a higher tier for more capacity."
         logger.error(f"Error getting AI response: {e}")
-        raise
+        return "I apologize, but I encountered an error while processing your request. Please try again later."
 
 def create_command_markup():
     """Create the command buttons markup."""
@@ -405,6 +402,10 @@ def handle_message(message):
     """Handle all other messages."""
     user_id = message.from_user.id
     
+    # If it's a group chat and no command is used, ignore the message
+    if not is_private_chat(message.chat.id) and not message.text.startswith('/'):
+        return
+    
     if user_id in user_states:
         # User has selected a command/category, process their question
         state = user_states[user_id]
@@ -453,19 +454,20 @@ def handle_message(message):
                 reply_markup=markup
             )
         else:
-            # In group chat, show simple text response
-            bot.reply_to(
-                message,
-                "Please use one of the available commands:\n"
-                "/protocol - Ask about Miden Protocol\n"
-                "/vm - Ask about Miden Virtual Machine\n"
-                "/compiler - Ask about Miden Compiler\n"
-                "/node - Ask about Miden Node\n"
-                "/client - Ask about Miden Client\n"
-                "/tutorials - Browse Miden Tutorials\n"
-                "/assembly - Ask about Miden Assembly\n"
-                "/stdlib - Ask about Standard Library"
-            )
+            # In group chat, only show response if a command was used
+            if message.text.startswith('/'):
+                bot.reply_to(
+                    message,
+                    "Please use one of the available commands:\n"
+                    "/protocol - Ask about Miden Protocol\n"
+                    "/vm - Ask about Miden Virtual Machine\n"
+                    "/compiler - Ask about Miden Compiler\n"
+                    "/node - Ask about Miden Node\n"
+                    "/client - Ask about Miden Client\n"
+                    "/tutorials - Browse Miden Tutorials\n"
+                    "/assembly - Ask about Miden Assembly\n"
+                    "/stdlib - Ask about Standard Library"
+                )
 
 def get_tutorial_categories():
     """Get formatted tutorial categories."""
